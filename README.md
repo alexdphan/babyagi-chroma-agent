@@ -1,1 +1,1 @@
-# gpteam
+# Baby AGI template with ChromaDB

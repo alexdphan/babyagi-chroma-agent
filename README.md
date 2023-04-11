@@ -14,8 +14,8 @@ This README will cover the following:
 - [Objective](#objective)
 - [How It Works](#how-it-works)
   - [Execution Agent](#execution-agent)
-  - [Task Creation Agent](#task-creation-agent)
-  - [Prioritization Agent](#prioritization-agent)
+  - [Task Creation Chain](#task-creation-chain)
+  - [Task Prioritization Chain](#task-prioritization-chain)
   - [Chroma](#chroma)
 - [How to Use](#how-to-use)
 - [Supported Models](#supported-models)
@@ -33,20 +33,21 @@ The script works by running an infinite loop that does the following steps:
 4. Creates new tasks and reprioritizes the task list based on the objective and the result of the previous task.
 
 ## Execution Agent
+later
+The execution_agent() function is where the OpenAI API is used alongside Langchain. It takes parameters including the objective and the task. It then sends a prompt to Langchain's OpenAI API, which returns the result of the task. The prompt consists of a description of the AI system's task, the objective, and the task itself. The result is then returned as a string. In addition to being an execution agent, the agent is provided with tooling such as search to receive and output more reliable information.
 
-The execution_agent() function is where the OpenAI API is used alongside Langhchain. It takes parameters including the objective and the task. It then sends a prompt to Langchain's OpenAI API, which returns the result of the task. The prompt consists of a description of the AI system's task, the objective, and the task itself. The result is then returned as a string.
+## Task Creation Chain
 
-## Task Creation Agent
+The class TaskCreationChain is where LLMChain is used to create new tasks. The function from_llm takes in parametersm using PromptTemplate from Langchain, which returns a list of new tasks as strings. The function then creates an instance ofr TaskCreationChain along with the custom input variables and behavior specified.
 
-The task_creation_agent() function is where OpenAI's API is used to create new tasks based on the objective and the result of the previous task. The function takes in parameters and sends a prompt to Langchain's OpenAI API, which returns a list of new tasks as strings. The function then returns the new tasks as a list of dictionaries, where each dictionary contains the name of the task.
+## Task Prioritization Chain
 
-## Prioritization Agent
+The class TaskPrioritizationChain is where LLMChain is used to prioritize tasks. The function from_llm takes in parameters using PromptTemplate from Langchain, which returns a list of new tasks as strings. The function then creates an instance of TaskPrioritizationChain along with the custom input variables and behavior specified.
 
-The prioritization_agent() function is where the Langchain's ChatOpenAI method is used to reprioritize the task list. The function takes parameter(s), such as the ID of the current task. It sends a prompt to Langchain's OpenAI API, which returns the reprioritized task list as a numbered list.
 
 ## Chroma
 
-Finally, the script uses Chroma to store and retrieve task results for context. The script creates a Chroma index based on the table name specified in the YOUR_TABLE_NAME variable. Chroma is then used to store the results of the task in the index, along with the task name and any additional metadata.
+Finally, the script uses Chroma to store, similarity search, and retrieve task results for context. The script creates a Chroma index based on the table name specified in the YOUR_TABLE_NAME variable. Chroma is then used to store the results of the task in the index, along with the task name and any additional metadata.
 
 # How to Use<a name="how-to-use"></a>
 

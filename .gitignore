@@ -3,3 +3,7 @@
 # database
 /chromadb
 ./chromadb
+
+# vscode
+/.vscode
+./.vscode

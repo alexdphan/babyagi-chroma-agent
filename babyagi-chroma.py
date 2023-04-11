@@ -371,9 +371,8 @@ class BabyAGI(Chain, BaseModel):
             **kwargs,
         )
 
-
-# OBJECTIVE = "Write a weather report for SF today"
-OBJECTIVE = "why is babyagi-chroma repo better than the original babyagi repo?"
+# Run the BabyAGI #
+OBJECTIVE = "Write a weather report for SF today"
 
 llm = OpenAI(temperature=0)
 # Logging of LLMChains

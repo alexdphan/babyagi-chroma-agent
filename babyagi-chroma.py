@@ -1,5 +1,8 @@
+from itertools import cycle
 import os
+from shutil import get_terminal_size
 import sys
+from threading import Thread
 import time
 import openai
 from dotenv import load_dotenv
@@ -10,7 +13,13 @@ from langchain.chat_models import ChatOpenAI
 from langchain import PromptTemplate
 from collections import deque
 from typing import Dict, List
-from langchain.schema import HumanMessage, SystemMessage, Document
+from langchain.schema import HumanMessage, SystemMessage
+import time
+import sys
+from time import sleep
+from rich.console import Console
+import contextlib
+
 
 # Set Variables
 load_dotenv()
@@ -60,6 +69,45 @@ collection = vectorstore._client.get_or_create_collection(name=table_name, embed
 # Initialize an empty task list using the deque data structure
 task_list = deque([])
 
+class Loader:
+    def __init__(self, desc="Loading...", end="", timeout=0.1):
+        self.desc = desc
+        self.end = end
+        self.timeout = timeout
+
+        self._thread = Thread(target=self._animate, daemon=True)
+        self.steps = ["⢿", "⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⡿"]
+        self.done = False
+
+    def start(self):
+        print("\n")  # Add a newline here
+        self._thread.start()
+        return self
+
+    def _animate(self):
+        for c in cycle(self.steps):
+            if self.done:
+                break
+            print(f"\r\033[93m{c} {self.desc} {c}\033[0m", flush=True, end="")
+            sleep(self.timeout)
+
+    def stop(self):
+        self.done = True
+        cols = get_terminal_size((80, 20)).columns
+        print("\r" + " " * cols, end="", flush=True)
+        print(f"\r{self.end}", flush=True)
+        print("\n")  # Add a newline here
+
+    def __enter__(self):
+        self.start()
+
+    def __exit__(self, exc_type, exc_value, tb):
+        self.stop()
+
+
+
+
+
 # Define a function to add a task to the task list
 def add_task(task: Dict):
     # If the task does not have a task_id value, assign it a default value based on the current length of the task list
@@ -74,8 +122,11 @@ def get_ada_embedding(text):
     embeddings = embedding.embed_query(text) 
     return [embeddings]  # return a 2D array containing the single embedding
 
+
+
 # OpenAI call: for the future executing agent
 def openai_call(text, use_gpt3=False, retries=2, retry_wait=10):
+   
     retry_counter = 0
     while retry_counter < retries:
         model_name = "gpt-3.5-turbo" if (use_gpt3 or retry_counter >= 1) else "gpt-4"
@@ -107,12 +158,13 @@ def openai_call(text, use_gpt3=False, retries=2, retry_wait=10):
 
 
 # Task creation agent
-def task_creation_agent(task_description: str, result: Dict, task_list: List[str], gpt_version: str = 'gpt-4'):
+def task_creation_agent(task_description: str, result: Dict, task_list: List[str], objective: OBJECTIVE):
+    print("\n")
     print("\033[92m\033[1m" + "\U0001F4DD Task Creation Agent 🎨" + "\033[0m\033[0m")
     create_task = PromptTemplate(
         input_variables=["objective", "result", "task_description", "task_list"],
-                template="You are a task creation AI that uses the result of an execution agent to create new tasks with the following objective: {objective}. The last completed task has the result: {result}. This result was based on this task descriptigit on: {task_description}. These are incomplete tasks: {task_list}. Based on the result, create new tasks to be completed by the AI system that do not overlap with incomplete tasks. Return the tasks as an array.",)
-    response = openai_call(create_task.format(objective=OBJECTIVE, result=result, task_description=task_description, task_list=', '.join(task_list)))
+                template="You are a task creation AI that uses the result of an execution agent to create new tasks with the following objective: {objective}. The last completed task has the result: {result}. This result was based on this task description: {task_description}. These are incomplete tasks: {task_list}. Based on the result, create new tasks to be completed by the AI system that do not overlap with incomplete tasks. Return the tasks as an array.",)
+    response = openai_call(create_task.format(objective=objective, result=result, task_description=task_description, task_list=', '.join(task_list)))
     new_tasks = response.split('\n')
     return [{"task_id": None, "task_name": task_name.strip()} for task_name in new_tasks if task_name.strip()] 
 
@@ -154,7 +206,7 @@ def execution_agent(objective: str, task: str, chroma: Chroma, n: int):
 # Add the first task to the task list
 first_task = {"task_id": 1, "task_name": YOUR_FIRST_TASK}
 
-# Main loop
+# Main Loop
 try:
     add_task(first_task)
     task_id_counter = 1
@@ -164,40 +216,40 @@ try:
             print("\033[95m\033[1m" + "\n*****TASK LIST*****\n" + "\033[0m\033[0m")
             for task in task_list:
                 print(task["task_id"], task["task_name"])
-             
+
             current_task = task_list.popleft()
 
             # Display next task
             print("\033[92m\033[1m" + "\n*****NEXT TASK*****\n" + "\033[0m\033[0m")
             print(str(current_task["task_id"]) + ": " + current_task["task_name"])
 
-            result = execution_agent(objective=OBJECTIVE, task=current_task["task_name"], chroma=vectorstore, n=5)
+            with Loader("Executing task..."):
+                result = execution_agent(objective=OBJECTIVE, task=current_task["task_name"], chroma=vectorstore, n=5)
 
             # Display task result
             print("\033[93m\033[1m" + "\n*****TASK RESULT*****\n" + "\033[0m\033[0m")
             print(result)
-
-            
             enriched_result = result
-            new_tasks = task_creation_agent(task_description=current_task["task_name"], result=enriched_result, task_list=[task["task_name"] for task in task_list])
-            
-        if new_tasks:  # Check if there are new tasks before printing the message
-            print("\033[94m\033[1m" + "\n*****NEW TASKS CREATED*****\n" + "\033[0m\033[0m")
-        for task in new_tasks:
-            print(task["task_name"])  # Print the task name directly
-            # Set the ID of each new task to the next available integer value
-            task["task_id"] = str(max([int(t["task_id"]) for t in task_list]) + 1) if task_list else "1"
-            add_task(task)
 
-        prioritization_agent(this_task_id=current_task["task_id"])
+            with Loader("Creating new tasks..."):
+                new_tasks = task_creation_agent(task_description=current_task["task_name"], result=enriched_result, task_list=[task["task_name"] for task in task_list], objective=OBJECTIVE)
 
-        # Sleep before checking the task list again
-        time.sleep(1)
+            if new_tasks:  # Check if there are new tasks before printing the message
+                print("\033[94m\033[1m" + "\n*****NEW TASKS CREATED*****\n" + "\033[0m\033[0m")
 
+            for task in new_tasks:
+                print(task["task_name"])  # Print the task name directly
+                # Set the ID of each new task to the next available integer value
+                task["task_id"] = str(max([int(t["task_id"]) for t in task_list if t["task_id"].isdigit()]) + 1) if task_list else "1"
+                add_task(task)
+                
+            with Loader("Prioritizing tasks..."):
+                prioritization_agent(this_task_id=current_task["task_id"])
+            # Sleep before checking the task list again
+            time.sleep(1)
 
 except KeyboardInterrupt:
     print("\nScript stopped")
     sys.exit(0)
-    
-    
+
 

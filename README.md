@@ -2,9 +2,11 @@
 
 Inspired by [Yoheina Kajima's BabyAGI](https://github.com/yoheinakajima/babyagi)
 
+[babyagi-chroma](https://github.com/alexdphan/babyagi-chroma) repository has the advantage of using a free vector storage option (Chroma) locally, which makes it more appealing for users who want to avoid the potential costs associated with other vector storage options such as Pinecone. This difference can be a significant factor when being able to run projects at a cost.
+
 # Objective
 
-This Python script is an example of an AI-powered task management system. The system uses Langchain, OpenAI and Chroma's Vector Database to create, prioritize, and execute tasks. The main idea behind this system is that it creates tasks based on the result of previous tasks and a predefined objective. The script then uses OpenAI's natural language processing (NLP) capabilities to create new tasks based on the objective, and Chroma to store and retrieve task results for context. This is a pared-down version of the original [Task-Driven Autonomous Agent](https://twitter.com/yoheinakajima/status/1640934493489070080?s=20) (Mar 28, 2023).
+This Python script is an example of an AI-powered task management system. The system uses Langchain, OpenAI and Chroma's Vector Database to create, prioritize, and execute tasks. The main idea behind this system is that it creates tasks based on the result of previous tasks and a predefined objective. The script then uses Langchain's OpenAI natural language processing (NLP) capabilities to create new tasks based on the objective, and Chroma to store and retrieve task results for context. This is a pared-down version of the original [Task-Driven Autonomous Agent](https://twitter.com/yoheinakajima/status/1640934493489070080?s=20) (Mar 28, 2023).
 
 This README will cover the following:
 
@@ -32,7 +34,7 @@ The script works by running an infinite loop that does the following steps:
 
 ## Execution Agent
 
-The execution_agent() function is where the OpenAI API is used alongside Langhchain. It takes two parameters: the objective and the task. It then sends a prompt to Langchain's OpenAI API, which returns the result of the task. The prompt consists of a description of the AI system's task, the objective, and the task itself. The result is then returned as a string.
+The execution_agent() function is where the OpenAI API is used alongside Langhchain. It takes parameters including the objective and the task. It then sends a prompt to Langchain's OpenAI API, which returns the result of the task. The prompt consists of a description of the AI system's task, the objective, and the task itself. The result is then returned as a string.
 
 ## Task Creation Agent
 
@@ -40,7 +42,7 @@ The task_creation_agent() function is where OpenAI's API is used to create new t
 
 ## Prioritization Agent
 
-The prioritization_agent() function is where OpenAI's API is used to reprioritize the task list. The function takes parameter(s), such as the ID of the current task. It sends a prompt to OpenAI's API, which returns the reprioritized task list as a numbered list.
+The prioritization_agent() function is where the Langchain's ChatOpenAI method is used to reprioritize the task list. The function takes parameter(s), such as the ID of the current task. It sends a prompt to Langchain's OpenAI API, which returns the reprioritized task list as a numbered list.
 
 ## Chroma
 
@@ -54,17 +56,17 @@ To use the script, you will need to follow these steps:
 2. Install the required packages: `pip install -r requirements.txt`
 3. Copy the .env.example file to .env: `cp .env.example .env`. This is where you will set the following variables.
 4. Set your OpenAI keys in the OPENAI_API_KEY.
-5. There is no Chroma API Key, so we won't have to worry about that.
+5. ~~There is no Chroma API Key, so we won't have to worry about this.~~
 6. Set the name of the table where the task results will be stored in the TABLE_NAME variable.
 7. (Optional) Set the objective of the task management system in the OBJECTIVE variable.
 8. (Optional) Set the first task of the system in the INITIAL_TASK variable.
-9. Run the script.
+9. Run the script using the command `python babyagi-chroma.py`.
 
 All optional values above can also be specified on the command line.
 
 # Supported Models<a name="supported-models"></a>
 
-This script works with all OpenAI models. Default model is **gpt-4**. When there is a timeout request, the model will switch to **gpt-3.5-turbo**. To use a different model, feel free to edit the code however you wish.
+This script works with all OpenAI models. Default model is **gpt-4**. When there is a timeout request (after two attempts), the model will switch to **gpt-3.5-turbo**. To use a different model, feel free to edit the code however you wish.
 
 # Warning<a name="continous-script-warning"></a>
 

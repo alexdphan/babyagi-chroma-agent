@@ -1,301 +1,308 @@
-from itertools import cycle
 import os
-from shutil import get_terminal_size
-import sys
-from threading import Thread
-import time
-import openai
-from dotenv import load_dotenv
-from langchain.vectorstores import Chroma
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.llms import OpenAI
-from langchain.chat_models import ChatOpenAI
-from langchain import PromptTemplate
 from collections import deque
-from typing import Dict, List
-from langchain.schema import HumanMessage, SystemMessage
-import time
-import sys
-from time import sleep
-from rich.console import Console
+from typing import Dict, List, Optional, Any
+from dotenv import load_dotenv
+
+from langchain import LLMChain, OpenAI, PromptTemplate
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.llms import BaseLLM
+from langchain.vectorstores.base import VectorStore
+from pydantic import BaseModel, Field
+from langchain.chains.base import Chain
+
+from langchain.vectorstores import FAISS
+from langchain.docstore import InMemoryDocstore
+from langchain.vectorstores import Chroma
+
+from langchain.agents import ZeroShotAgent, Tool, AgentExecutor
+from langchain import OpenAI, SerpAPIWrapper, LLMChain
+from chromadb import errors as chromadb_errors
 
 # Set Variables
 load_dotenv()
 
-# Set API Keys
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 assert OPENAI_API_KEY, "OPENAI_API_KEY environment variable is missing from .env"
 
-# Table / Index / Collection config
-YOUR_TABLE_NAME = os.getenv("TABLE_NAME", "")
-assert YOUR_TABLE_NAME, "TABLE_NAME environment variable is missing from .env"
-
-# Project config
-OBJECTIVE = os.getenv("OBJECTIVE", "")
-assert OBJECTIVE, "OBJECTIVE environment variable is missing from .env"
-
-# This is the first task that the user will be asked to complete
-YOUR_FIRST_TASK = os.getenv("FIRST_TASK", "")
-assert YOUR_FIRST_TASK, "FIRST_TASK environment variable is missing from .env"
-
-# Print OBJECTIVE
-print("\033[96m\033[1m" + "\n***** 🎯 OBJECTIVE 🎯 *****\n" + "\033[0m\033[0m")
-print(OBJECTIVE)
-
-# Configure OpenAI
-openai.api_key = OPENAI_API_KEY
+SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY", "")
+assert SERPAPI_API_KEY, "SERPAPI_API_KEY environment variable is missing from .env"
 
 # Assigning table_name to YOUR_TABLE_NAME
+# Table / Collection config
+YOUR_TABLE_NAME = os.getenv("TABLE_NAME", "")
+assert YOUR_TABLE_NAME, "TABLE_NAME environment variable is missing from .env"
 table_name = YOUR_TABLE_NAME
 
-# Setting embedding to OpenAIEmbeddings, initializing OpenAIEmbeddings with the OpenAI API key
-embedding = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+# Define your embedding model
+embeddings_model = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+# Initialize the vectorstore as empty
+import faiss
+embedding_size = 1536
+persist_directory = "chromadb"
+index = faiss.IndexFlatL2(embedding_size)
+# vectorstore = FAISS(embeddings_model.embed_query, index, InMemoryDocstore({}), {})
+vectorstore = Chroma(table_name,     embeddings_model,
+persist_directory=persist_directory)
 
-# openai call: for the executing functions
-llm = OpenAI()
-
-# Create the index, specifying the directory where it will be stored
-persist_directory = "database"
-# Initialize Chroma with the table name, embedding function, and persist directory
-vectorstore = Chroma(table_name, embedding, persist_directory=persist_directory)
-# Persist the vectorstore to the specified directory
 vectorstore.persist()
 
-# Get or create a collection with the specified name and embedding function
-collection = vectorstore._client.get_or_create_collection(
-    name=table_name, embedding_function=embedding
+
+class TaskCreationChain(LLMChain):
+    """Chain to generates tasks."""
+
+    @classmethod
+    def from_llm(cls, llm: BaseLLM, verbose: bool = True) -> LLMChain:
+        """Get the response parser."""
+        task_creation_template = (
+            "You are an task creation AI that uses the result of an execution agent"
+            " to create new tasks with the following objective: {objective},"
+            " The last completed task has the result: {result}."
+            " This result was based on this task description: {task_description}."
+            " These are incomplete tasks: {incomplete_tasks}."
+            " Based on the result, create new tasks to be completed"
+            " by the AI system that do not overlap with incomplete tasks."
+            " Return the tasks as an array."
+        )
+        prompt = PromptTemplate(
+            template=task_creation_template,
+            input_variables=["result", "task_description", "incomplete_tasks", "objective"],
+        )
+        return cls(prompt=prompt, llm=llm, verbose=verbose)
+      
+class TaskPrioritizationChain(LLMChain):
+    """Chain to prioritize tasks."""
+
+    @classmethod
+    def from_llm(cls, llm: BaseLLM, verbose: bool = True) -> LLMChain:
+        """Get the response parser."""
+        task_prioritization_template = (
+            "You are an task prioritization AI tasked with cleaning the formatting of and reprioritizing"
+            " the following tasks: {task_names}."
+            " Consider the ultimate objective of your team: {objective}."
+            " Do not remove any tasks. Return the result as a numbered list, like:"
+            " #. First task"
+            " #. Second task"
+            " Start the task list with number {next_task_id}."
+        )
+        prompt = PromptTemplate(
+            template=task_prioritization_template,
+            input_variables=["task_names", "next_task_id", "objective"],
+        )
+        return cls(prompt=prompt, llm=llm, verbose=verbose)
+      
+
+todo_prompt = PromptTemplate.from_template("You are a planner who is an expert at coming up with a todo list for a given objective. Come up with a todo list for this objective: {objective}")
+todo_chain = LLMChain(llm=OpenAI(temperature=0), prompt=todo_prompt)
+search = SerpAPIWrapper(serpapi_api_key=SERPAPI_API_KEY)
+tools = [
+    Tool(
+        name = "Search",
+        func=search.run,
+        description="useful for when you need to answer questions about current events"
+    ),
+    Tool(
+        name = "TODO",
+        func=todo_chain.run,
+        description="useful for when you need to come up with todo lists. Input: an objective to create a todo list for. Output: a todo list for that objective. Please be very clear what the objective is!"
+    )
+]
+
+
+prefix = """You are an AI who performs one task based on the following objective: {objective}. Take into account these previously completed tasks: {context}."""
+suffix = """Question: {task}
+{agent_scratchpad}"""
+prompt = ZeroShotAgent.create_prompt(
+    tools, 
+    prefix=prefix, 
+    suffix=suffix, 
+    input_variables=["objective", "task", "context","agent_scratchpad"]
 )
 
-# Initialize an empty task list using the deque data structure
-task_list = deque([])
-
-
-class Loader:
-    def __init__(self, desc="Loading...", end="", timeout=0.1):
-        self.desc = desc
-        self.end = end
-        self.timeout = timeout
-
-        self._thread = Thread(target=self._animate, daemon=True)
-        self.steps = ["⢿", "⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⡿"]
-        self.done = False
-
-    def start(self):
-        print()  # Add a newline here
-        self._thread.start()
-        return self
-
-    def _animate(self):
-        print()  # Add an empty newline before the animation
-        for c in cycle(self.steps):
-            if self.done:
-                break
-            print(f"\r\033[93m{c} {self.desc} {c}\033[0m", flush=True, end="")
-            sleep(self.timeout)
-        print()  # Add an empty newline after the animation
-
-    def stop(self):
-        self.done = True
-        cols = get_terminal_size((80, 20)).columns
-        print("\r" + " " * cols, end="", flush=True)
-        print(f"\r{self.end}", flush=True)
-
-    def __enter__(self):
-        self.start()
-
-    def __exit__(self, exc_type, exc_value, tb):
-        self.stop()
-
-
-# Define a function to add a task to the task list
-def add_task(task: Dict):
-    # If the task does not have a task_id value, assign it a default value based on the current length of the task list
-    if task["task_id"] is None:
-        task["task_id"] = len(task_list)
-    # Add the task to the task list
-    task_list.append(task)
-
-
-# Uses model text-embedding-ada-002 by default
-def get_ada_embedding(text):
-    text = text.replace("\n", " ")
-    embeddings = embedding.embed_query(text)
-    return [embeddings]  # return a 2D array containing the single embedding
-
-
-# OpenAI call: for the future executing agent
-def openai_call(text, use_gpt3=False, retries=2, retry_wait=15):
-    retry_counter = 0
-    while retry_counter < retries:
-        model_name = "gpt-3.5-turbo" if (use_gpt3 or retry_counter >= 1) else "gpt-4"
-        openaichat = ChatOpenAI(
-            model_name=model_name,
-            max_retries=retries,
-            request_timeout=15,
-        )
-        messages = [
-            SystemMessage(content="You are a helpful assistant."),
-            HumanMessage(content=text),
-        ]
-        try:
-            response = openaichat(messages)
-            return response.content
-        except openai.OpenAIError as e:
-            if "Request timed out" in str(e):
-                print(
-                    f"\033[91m"
-                    + f"\nTIMEOUT REQUEST USING: {model_name}\n"
-                    + "\033[91m"
-                )
-                print(
-                    f"\033[4m"
-                    + f"Retrying in {retry_wait} seconds (attempt {retry_counter + 1}/{retries})"
-                    + "\033[4m"
-                )
-                time.sleep(retry_wait)
-                retry_counter += 1
-                if retry_counter == 1:
-                    use_gpt3 = True
-                    print("\033[1m" + f"\nUSING {model_name}\n" + "\033[1m")
-            else:
-                raise e
-    print("All retries exhausted. Please try again later.")
-    return ""
-
-
-# Task creation agent
-def task_creation_agent(
-    task_description: str, result: Dict, task_list: List[str], objective: OBJECTIVE
-):
-    print("\n")
-    print("\033[92m\033[1m" + "\U0001F4DD Task Creation Agent 🎨" + "\033[0m\033[0m")
-    create_task = PromptTemplate(
-        input_variables=["objective", "result", "task_description", "task_list"],
-        template="You are a task creation AI that uses the result of an execution agent to create new tasks with the following objective: {objective}. The last completed task has the result: {result}. This result was based on this task description: {task_description}. These are incomplete tasks: {task_list}. Based on the result, create new tasks to be completed by the AI system that do not overlap with incomplete tasks. Return the tasks as an array.",
-    )
-    response = openai_call(
-        create_task.format(
-            objective=objective,
-            result=result,
-            task_description=task_description,
-            task_list=", ".join(task_list),
-        )
-    )
-    new_tasks = response.split("\n")
-    return [
-        {"task_id": None, "task_name": task_name.strip()}
-        for task_name in new_tasks
-        if task_name.strip()
-    ]
-
-
-# Prioritization agent
-def prioritization_agent(this_task_id: int, gpt_version: str = "gpt-4"):
-    global task_list
-    task_names = [task["task_name"] for task in task_list]
+def get_next_task(task_creation_chain: LLMChain, result: Dict, task_description: str, task_list: List[str], objective: str) -> List[Dict]:
+    """Get the next task."""
+    incomplete_tasks = ", ".join(task_list)
+    response = task_creation_chain.run(result=result, task_description=task_description, incomplete_tasks=incomplete_tasks, objective=objective)
+    new_tasks = response.split('\n')
+    return [{"task_name": task_name} for task_name in new_tasks if task_name.strip()]
+  
+def prioritize_tasks(task_prioritization_chain: LLMChain, this_task_id: int, task_list: List[Dict], objective: str) -> List[Dict]:
+    """Prioritize tasks."""
+    task_names = [t["task_name"] for t in task_list]
     next_task_id = int(this_task_id) + 1
-    prioritize_task = PromptTemplate(
-        input_variables=["task_names", "objective", "next_task_id"],
-        template="You are a task prioritization AI tasked with cleaning the formatting of and reprioritizing the following tasks: {task_names}. Consider the ultimate objective of your team: {objective}. Do not remove any tasks. Return the result as a numbered list, like:\n#. First task\n#. Second task\nStart the task list with number {next_task_id}",
-    )
-    response = openai_call(
-        prioritize_task.format(
-            objective=OBJECTIVE, task_names=task_names, next_task_id=next_task_id
-        )
-    )
-    new_tasks = response.split("\n")
-    task_list = deque()
+    response = task_prioritization_chain.run(task_names=task_names, next_task_id=next_task_id, objective=objective)
+    new_tasks = response.split('\n')
+    prioritized_task_list = []
     for task_string in new_tasks:
+        if not task_string.strip():
+            continue
         task_parts = task_string.strip().split(".", 1)
         if len(task_parts) == 2:
             task_id = task_parts[0].strip()
             task_name = task_parts[1].strip()
-            task_list.append({"task_id": task_id, "task_name": task_name})
+            prioritized_task_list.append({"task_id": task_id, "task_name": task_name})
+    return prioritized_task_list
+  
+# def _get_top_tasks(vectorstore, query: str, k: int) -> List[str]:
+#     """Get the top k tasks based on the query."""
+#     results = vectorstore.similarity_search_with_score(query, k=k)
+#     if not results:
+#         return []
+#     sorted_results, _ = zip(*sorted(results, key=lambda x: x[1], reverse=True))
+#     return [str(item.metadata['task']) for item in sorted_results]
 
+def _get_top_tasks(vectorstore: Chroma, query: str, k: int) -> List[str]:
+    """Get the top k tasks based on the query."""
+    results = vectorstore.similarity_search_with_score(query, k=k)
+    if not results:
+        return []
+    sorted_results, _ = zip(*sorted(results, key=lambda x: x[1], reverse=True))
+    tasks = []
+    for item in sorted_results:
+        try:
+            tasks.append(str(item.metadata['task']))
+        except KeyError:
+            print(f"Warning: 'task' key not found in metadata of item")
+    return tasks
 
-# Context agent
-def context_agent(query: str, chroma: Chroma, n: int):
-    query_embedding = get_ada_embedding(query)
-    results = chroma.similarity_search_by_vector(query_embedding[0], k=n)
-    return [str(result.page_content) for result in results]
-
-
-# Execution agent
-def execution_agent(objective: str, task: str, chroma: Chroma, n: int):
-    context = context_agent(query=task, chroma=vectorstore, n=n)
-    execute_task = PromptTemplate(
-        input_variables=["objective", "context", "task"],
-        template="You are an AI who performs one task based on the following objective: {objective}.\nTake into account these previously completed tasks: {context}\nYour task: {task}. Perform the task and return the result.",
-    )
-    response = openai_call(
-        execute_task.format(objective=objective, context=", ".join(context), task=task)
-    )
-    return response.strip()
-
-
-# Add the first task to the task list
-first_task = {"task_id": 1, "task_name": YOUR_FIRST_TASK}
-
-console = Console()
-
-# Main Loop
-try:
-    add_task(first_task)
-    task_id_counter = 1
+def execute_task(vectorstore: Chroma, execution_chain: LLMChain, objective: str, task: str, k: int = 5) -> str:
+    """Execute a task."""
+    k = 5
     while True:
-        if task_list:
-            # Display task list
-            console.print("\n[bold magenta]*****TASK LIST*****[/bold magenta]")
-            for task in task_list:
-                console.print(f"[bold]{task['task_id']}. {task['task_name']}[/bold]")
+        try:
+            context = _get_top_tasks(vectorstore, query=objective, k=k)
+            break
+        except chromadb_errors.NotEnoughElementsException:
+            k -= 1
+            if k == 0:
+                context = []
+                break
+    return execution_chain.run(objective=objective, context=context, task=task)
+  
+class BabyAGI(Chain, BaseModel):
+    """Controller model for the BabyAGI agent."""
 
-            current_task = task_list.popleft()
+    task_list: deque = Field(default_factory=deque)
+    task_creation_chain: TaskCreationChain = Field(...)
+    task_prioritization_chain: TaskPrioritizationChain = Field(...)
+    execution_chain: AgentExecutor = Field(...)
+    task_id_counter: int = Field(1)
+    vectorstore: VectorStore = Field(init=False)
+    max_iterations: Optional[int] = None
+        
+    class Config:
+        """Configuration for this pydantic object."""
+        arbitrary_types_allowed = True
 
-            # Display next task
-            console.print("\n[bold green]*****NEXT TASK*****[/bold green]")
-            console.print(
-                f"[bold]{current_task['task_id']}. {current_task['task_name']}[/bold]"
-            )
+    def add_task(self, task: Dict):
+        self.task_list.append(task)
 
-            with Loader("Executing task..."):
-                result = execution_agent(
-                    objective=OBJECTIVE,
-                    task=current_task["task_name"],
-                    chroma=vectorstore,
-                    n=5,
+    def print_task_list(self):
+        print("\033[95m\033[1m" + "\n*****TASK LIST*****\n" + "\033[0m\033[0m")
+        for t in self.task_list:
+            print(str(t["task_id"]) + ": " + t["task_name"])
+
+    def print_next_task(self, task: Dict):
+        print("\033[92m\033[1m" + "\n*****NEXT TASK*****\n" + "\033[0m\033[0m")
+        print(str(task["task_id"]) + ": " + task["task_name"])
+
+    def print_task_result(self, result: str):
+        print("\033[93m\033[1m" + "\n*****TASK RESULT*****\n" + "\033[0m\033[0m")
+        print(result)
+        
+    @property
+    def input_keys(self) -> List[str]:
+        return ["objective"]
+    
+    @property
+    def output_keys(self) -> List[str]:
+        return []
+
+    def _call(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """Run the agent."""
+        objective = inputs['objective']
+        first_task = inputs.get("first_task", "Make a todo list")
+        self.add_task({"task_id": 1, "task_name": first_task})
+        num_iters = 0
+        while True:
+            if self.task_list:
+                self.print_task_list()
+
+                # Step 1: Pull the first task
+                task = self.task_list.popleft()
+                self.print_next_task(task)
+
+                # Step 2: Execute the task
+                result = execute_task(
+                    self.vectorstore, self.execution_chain, objective, task["task_name"]
                 )
+                this_task_id = int(task["task_id"])
+                self.print_task_result(result)
 
-            # Display task result
-            console.print("\n[bold yellow]*****TASK RESULT*****[/bold yellow]")
-            console.print(f"[white]{result}[/white]")
-            enriched_result = result
-
-            with Loader("Creating new tasks..."):
-                new_tasks = task_creation_agent(
-                    task_description=current_task["task_name"],
-                    result=enriched_result,
-                    task_list=[task["task_name"] for task in task_list],
-                    objective=OBJECTIVE,
+                # Step 3: Store the result in Pinecone
+                result_id = f"result_{task['task_id']}"
+                self.vectorstore.add_texts(
+                    texts=[result],
+                    metadatas=[{"task": task["task_name"]}],
+                    ids=[result_id],
                 )
+                print(f"Stored result {result_id} in Chroma")
 
-            if new_tasks:  # Check if there are new tasks before printing the message
-                console.print("\n[bold blue]*****NEW TASKS CREATED*****[/bold blue]")
-
-            for task in new_tasks:
-                console.print(f"[bold]{task['task_id']}. {task['task_name']}[/bold]")
-                # Set the ID of each new task to the next available integer value
-                task["task_id"] = (
-                    str(max([int(t["task_id"]) for t in task_list]) + 1)
-                    if task_list
-                    else "1"
+                # Step 4: Create new tasks and reprioritize task list
+                new_tasks = get_next_task(
+                    self.task_creation_chain, result, task["task_name"], [t["task_name"] for t in self.task_list], objective
                 )
-                add_task(task)
+                for new_task in new_tasks:
+                    self.task_id_counter += 1
+                    new_task.update({"task_id": self.task_id_counter})
+                    self.add_task(new_task)
+                self.task_list = deque(
+                    prioritize_tasks(
+                        self.task_prioritization_chain, this_task_id, list(self.task_list), objective
+                    )
+                )
+            num_iters += 1
+            if self.max_iterations is not None and num_iters == self.max_iterations:
+                print("\033[91m\033[1m" + "\n*****TASK ENDING*****\n" + "\033[0m\033[0m")
+                break
+        return {}
 
-            with Loader("Prioritizing tasks..."):
-                prioritization_agent(this_task_id=current_task["task_id"])
-            # Sleep before checking the task list again
-            time.sleep(1)
-
-except KeyboardInterrupt:
-    print("\nScript stopped")
-    sys.exit(0)
+    @classmethod
+    def from_llm(
+        cls,
+        llm: BaseLLM,
+        vectorstore: VectorStore,
+        verbose: bool = False,
+        **kwargs
+    ) -> "BabyAGI":
+        """Initialize the BabyAGI Controller."""
+        task_creation_chain = TaskCreationChain.from_llm(
+            llm, verbose=verbose
+        )
+        task_prioritization_chain = TaskPrioritizationChain.from_llm(
+            llm, verbose=verbose
+        )
+        llm_chain = LLMChain(llm=llm, prompt=prompt)
+        tool_names = [tool.name for tool in tools]
+        agent = ZeroShotAgent(llm_chain=llm_chain, allowed_tools=tool_names)
+        agent_executor = AgentExecutor.from_agent_and_tools(agent=agent, tools=tools, verbose=True)
+        return cls(
+            task_creation_chain=task_creation_chain,
+            task_prioritization_chain=task_prioritization_chain,
+            execution_chain=agent_executor,
+            vectorstore=vectorstore,
+            **kwargs
+        )
+        
+OBJECTIVE = "Write a weather report for SF today"
+llm = OpenAI(temperature=0)
+# Logging of LLMChains
+verbose=False
+# If None, will keep on going forever
+max_iterations: Optional[int] = 3
+baby_agi = BabyAGI.from_llm(
+    llm=llm,
+    vectorstore=vectorstore,
+    verbose=verbose,
+    max_iterations=max_iterations
+)
+baby_agi({"objective": OBJECTIVE})

@@ -1,4 +1,4 @@
-# Baby AGI template with ChromaDB
+# Baby AGI template with Langchain Tools and Chroma
 
 Inspired by [Yoheina Kajima's BabyAGI](https://github.com/yoheinakajima/babyagi)
 
@@ -10,7 +10,7 @@ This Python script is an example of an AI-powered task management system. The sy
 
 This README will cover the following:
 
-- [Baby AGI template with ChromaDB](#baby-agi-template-with-chromadb)
+- [Baby AGI template with Langchain Tools and Chroma](#baby-agi-template-with-langchain-tools-and-chroma)
 - [Objective](#objective)
 - [How It Works](#how-it-works)
   - [Execution Agent](#execution-agent)

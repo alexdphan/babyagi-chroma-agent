@@ -10,8 +10,6 @@ from langchain.vectorstores.base import VectorStore
 from pydantic import BaseModel, Field
 from langchain.chains.base import Chain
 
-from langchain.vectorstores import FAISS
-from langchain.docstore import InMemoryDocstore
 from langchain.vectorstores import Chroma
 
 from langchain.agents import ZeroShotAgent, Tool, AgentExecutor
@@ -21,9 +19,11 @@ from chromadb import errors as chromadb_errors
 # Set Variables
 load_dotenv()
 
+# Setting up and asserting the env var OPENAI_API_KEY
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 assert OPENAI_API_KEY, "OPENAI_API_KEY environment variable is missing from .env"
 
+# Setting up and asserting the env var SERPAPI_API_KEY
 SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY", "")
 assert SERPAPI_API_KEY, "SERPAPI_API_KEY environment variable is missing from .env"
 
@@ -35,22 +35,22 @@ table_name = YOUR_TABLE_NAME
 
 # Define your embedding model
 embeddings_model = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
-# Initialize the vectorstore as empty
-import faiss
 
-embedding_size = 1536
+# No need to define this as chromadb will use the embedding model to get the embedding size
+# embedding_size = 1536
 persist_directory = "chromadb"
-# index = faiss.IndexFlatL2(embedding_size)
-# vectorstore = FAISS(embeddings_model.embed_query, index, InMemoryDocstore({}), {})
+
+# setting vectorstore to Chroma, initializing with table_name, embeddings_model, and persist_directory
 vectorstore = Chroma(table_name, embeddings_model, persist_directory=persist_directory)
 
+# Ensuring the vectorstore is persisting to the chromadb
 vectorstore.persist()
 
 
 class TaskCreationChain(LLMChain):
     """Chain to generates tasks."""
 
-    @classmethod
+    @classmethod  # new instance of the class every time we call it
     def from_llm(cls, llm: BaseLLM, verbose: bool = True) -> LLMChain:
         """Get the response parser."""
         task_creation_template = (
@@ -73,6 +73,7 @@ class TaskCreationChain(LLMChain):
             ],
         )
         return cls(prompt=prompt, llm=llm, verbose=verbose)
+        # cls is a parameter that allows you to reference the class within the class method. Instead of using the actual class name (TaskCreationChain, in this case)
 
 
 class TaskPrioritizationChain(LLMChain):
@@ -353,7 +354,9 @@ class BabyAGI(Chain, BaseModel):
         )
 
 
-OBJECTIVE = "Write a weather report for SF today"
+# OBJECTIVE = "Write a weather report for SF today"
+OBJECTIVE = "why is babyagi-chroma repo better than the original babyagi repo?"
+
 llm = OpenAI(temperature=0)
 # Logging of LLMChains
 verbose = False

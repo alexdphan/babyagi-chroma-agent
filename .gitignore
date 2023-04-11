@@ -1,5 +1,5 @@
 .env
 
 # database
-/database
-./database
+/chromadb
+./chromadb

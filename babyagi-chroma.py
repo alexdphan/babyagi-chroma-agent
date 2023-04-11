@@ -1,3 +1,4 @@
+# Install and Import Required Modules #
 import os
 from collections import deque
 from typing import Dict, List, Optional, Any
@@ -40,6 +41,7 @@ embeddings_model = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
 # embedding_size = 1536
 persist_directory = "chromadb"
 
+# Connect to the Vector Store #
 # setting vectorstore to Chroma, initializing with table_name, embeddings_model, and persist_directory
 vectorstore = Chroma(table_name, embeddings_model, persist_directory=persist_directory)
 
@@ -47,9 +49,11 @@ vectorstore = Chroma(table_name, embeddings_model, persist_directory=persist_dir
 vectorstore.persist()
 
 
+# Define the Chains #
 class TaskCreationChain(LLMChain):
     """Chain to generates tasks."""
 
+    # BaseLLM takes in a prompt and returns a string
     @classmethod  # new instance of the class every time we call it
     def from_llm(cls, llm: BaseLLM, verbose: bool = True) -> LLMChain:
         """Get the response parser."""
@@ -81,6 +85,7 @@ class TaskPrioritizationChain(LLMChain):
 
     @classmethod
     def from_llm(cls, llm: BaseLLM, verbose: bool = True) -> LLMChain:
+        # verbose displays additional information, like the prompt and the response
         """Get the response parser."""
         task_prioritization_template = (
             "You are an task prioritization AI tasked with cleaning the formatting of and reprioritizing"
@@ -98,11 +103,15 @@ class TaskPrioritizationChain(LLMChain):
         return cls(prompt=prompt, llm=llm, verbose=verbose)
 
 
+# Assigning todo_prompt prompt that takes in an objective (prompt) and returns a todo list (response)
 todo_prompt = PromptTemplate.from_template(
     "You are a planner who is an expert at coming up with a todo list for a given objective. Come up with a todo list for this objective: {objective}"
 )
+# todo_chain is an instance of the LLMChain class
 todo_chain = LLMChain(llm=OpenAI(temperature=0), prompt=todo_prompt)
+# search is an instance of the SerpAPIWrapper class
 search = SerpAPIWrapper(serpapi_api_key=SERPAPI_API_KEY)
+# uses the tools that include search and todo_chain to come up with a todo list
 tools = [
     Tool(
         name="Search",
@@ -116,7 +125,7 @@ tools = [
     ),
 ]
 
-
+# A prompt that takes in an objective, a task, and a context and returns an answer in zero-shot, outputs in the form of a string
 prefix = """You are an AI who performs one task based on the following objective: {objective}. Take into account these previously completed tasks: {context}."""
 suffix = """Question: {task}
 {agent_scratchpad}"""
@@ -128,6 +137,7 @@ prompt = ZeroShotAgent.create_prompt(
 )
 
 
+# Define the BabyAGI Controller #
 def get_next_task(
     task_creation_chain: LLMChain,
     result: Dict,
@@ -143,7 +153,9 @@ def get_next_task(
         incomplete_tasks=incomplete_tasks,
         objective=objective,
     )
+    # response is a string, so we split it into a list of strings
     new_tasks = response.split("\n")
+    # return a list of dictionaries, each dictionary has a task_name key value being the task name
     return [{"task_name": task_name} for task_name in new_tasks if task_name.strip()]
 
 
@@ -154,45 +166,49 @@ def prioritize_tasks(
     objective: str,
 ) -> List[Dict]:
     """Prioritize tasks."""
+    # task_names is a list of strings, each string is a task name
     task_names = [t["task_name"] for t in task_list]
+    # next_task_id is an integer, it is the next task id
     next_task_id = int(this_task_id) + 1
     response = task_prioritization_chain.run(
         task_names=task_names, next_task_id=next_task_id, objective=objective
     )
     new_tasks = response.split("\n")
+    # prioritized_task_list is a list of dictionaries, each dictionary has a task_id key value being the task id and a task_name key value being the task name
     prioritized_task_list = []
     for task_string in new_tasks:
         if not task_string.strip():
             continue
+        # task_parts is a list of strings, the first string is the task id and the second string is the task name
         task_parts = task_string.strip().split(".", 1)
+        # if the length of task_parts is 2, then the task id is the first string and the task name is the second string
         if len(task_parts) == 2:
             task_id = task_parts[0].strip()
             task_name = task_parts[1].strip()
             prioritized_task_list.append({"task_id": task_id, "task_name": task_name})
+    # return the list of dictionaries
     return prioritized_task_list
-
-
-# def _get_top_tasks(vectorstore, query: str, k: int) -> List[str]:
-#     """Get the top k tasks based on the query."""
-#     results = vectorstore.similarity_search_with_score(query, k=k)
-#     if not results:
-#         return []
-#     sorted_results, _ = zip(*sorted(results, key=lambda x: x[1], reverse=True))
-#     return [str(item.metadata['task']) for item in sorted_results]
 
 
 def _get_top_tasks(vectorstore: Chroma, query: str, k: int) -> List[str]:
     """Get the top k tasks based on the query."""
+    # results is a list of tuples, each tuple has a vectorstore item and a score
     results = vectorstore.similarity_search_with_score(query, k=k)
+    # if results is empty, return an empty list
     if not results:
         return []
+    # sorted_results is a list of vectorstore items, sorted by score
     sorted_results, _ = zip(*sorted(results, key=lambda x: x[1], reverse=True))
+    # tasks is a list of strings, each string is a task, for items in sorted_results
     tasks = []
     for item in sorted_results:
+        # If the metadata of the item has a task key, then add the task to the list
         try:
             tasks.append(str(item.metadata["task"]))
+        # If the metadata of the item does not have a task key, then print a warning
         except KeyError:
-            print(f"Warning: 'task' key not found in metadata of item")
+            # print(f"Warning: 'task' key not found in metadata of item")
+            print(f"")
     return tasks
 
 
@@ -234,13 +250,15 @@ def execute_task(
 class BabyAGI(Chain, BaseModel):
     """Controller model for the BabyAGI agent."""
 
-    task_list: deque = Field(default_factory=deque)
-    task_creation_chain: TaskCreationChain = Field(...)
-    task_prioritization_chain: TaskPrioritizationChain = Field(...)
-    execution_chain: AgentExecutor = Field(...)
-    task_id_counter: int = Field(1)
-    vectorstore: VectorStore = Field(init=False)
-    max_iterations: Optional[int] = None
+    task_list: deque = Field(default_factory=deque)  # list of tasks
+    task_creation_chain: TaskCreationChain = Field(...)  # chain generating new tasks
+    task_prioritization_chain: TaskPrioritizationChain = Field(
+        ...
+    )  # chain prioritizing tasks
+    execution_chain: AgentExecutor = Field(...)  # chain executing tasks
+    task_id_counter: int = Field(1)  # counter for task ids
+    vectorstore: VectorStore = Field(init=False)  # vectorstore for storing results
+    max_iterations: Optional[int] = None  # maximum number of iterations
 
     class Config:
         """Configuration for this pydantic object."""

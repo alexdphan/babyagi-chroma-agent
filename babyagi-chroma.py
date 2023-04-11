@@ -18,8 +18,6 @@ import time
 import sys
 from time import sleep
 from rich.console import Console
-import contextlib
-
 
 # Set Variables
 load_dotenv()

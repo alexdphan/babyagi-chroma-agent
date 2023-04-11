@@ -80,33 +80,30 @@ class Loader:
         self.done = False
 
     def start(self):
-        print("\n")  # Add a newline here
+        print()  # Add a newline here
         self._thread.start()
         return self
 
     def _animate(self):
+        print()  # Add an empty newline before the animation
         for c in cycle(self.steps):
             if self.done:
                 break
             print(f"\r\033[93m{c} {self.desc} {c}\033[0m", flush=True, end="")
             sleep(self.timeout)
+        print()  # Add an empty newline after the animation
 
     def stop(self):
         self.done = True
         cols = get_terminal_size((80, 20)).columns
         print("\r" + " " * cols, end="", flush=True)
         print(f"\r{self.end}", flush=True)
-        print("\n")  # Add a newline here
 
     def __enter__(self):
         self.start()
 
     def __exit__(self, exc_type, exc_value, tb):
         self.stop()
-
-
-
-
 
 # Define a function to add a task to the task list
 def add_task(task: Dict):
@@ -125,7 +122,7 @@ def get_ada_embedding(text):
 
 
 # OpenAI call: for the future executing agent
-def openai_call(text, use_gpt3=False, retries=2, retry_wait=10):
+def openai_call(text, use_gpt3=False, retries=2, retry_wait=15):
    
     retry_counter = 0
     while retry_counter < retries:
@@ -133,7 +130,7 @@ def openai_call(text, use_gpt3=False, retries=2, retry_wait=10):
         openaichat = ChatOpenAI(
             model_name=model_name,
             max_retries=retries,
-            request_timeout=10,
+            request_timeout=15,
         )
         messages = [
             SystemMessage(content="You are a helpful assistant."),
@@ -206,6 +203,8 @@ def execution_agent(objective: str, task: str, chroma: Chroma, n: int):
 # Add the first task to the task list
 first_task = {"task_id": 1, "task_name": YOUR_FIRST_TASK}
 
+console = Console()
+
 # Main Loop
 try:
     add_task(first_task)
@@ -213,36 +212,36 @@ try:
     while True:
         if task_list:
             # Display task list
-            print("\033[95m\033[1m" + "\n*****TASK LIST*****\n" + "\033[0m\033[0m")
+            console.print("\n[bold magenta]*****TASK LIST*****[/bold magenta]")
             for task in task_list:
-                print(task["task_id"], task["task_name"])
+                console.print(f"[bold]{task['task_id']}. {task['task_name']}[/bold]")
 
             current_task = task_list.popleft()
 
             # Display next task
-            print("\033[92m\033[1m" + "\n*****NEXT TASK*****\n" + "\033[0m\033[0m")
-            print(str(current_task["task_id"]) + ": " + current_task["task_name"])
-
+            console.print("\n[bold green]*****NEXT TASK*****[/bold green]")
+            console.print(f"[bold]{current_task['task_id']}. {current_task['task_name']}[/bold]")
+            
             with Loader("Executing task..."):
                 result = execution_agent(objective=OBJECTIVE, task=current_task["task_name"], chroma=vectorstore, n=5)
 
             # Display task result
-            print("\033[93m\033[1m" + "\n*****TASK RESULT*****\n" + "\033[0m\033[0m")
-            print(result)
+            console.print("\n[bold yellow]*****TASK RESULT*****[/bold yellow]")
+            console.print(f"[white]{result}[/white]")
             enriched_result = result
 
             with Loader("Creating new tasks..."):
                 new_tasks = task_creation_agent(task_description=current_task["task_name"], result=enriched_result, task_list=[task["task_name"] for task in task_list], objective=OBJECTIVE)
 
             if new_tasks:  # Check if there are new tasks before printing the message
-                print("\033[94m\033[1m" + "\n*****NEW TASKS CREATED*****\n" + "\033[0m\033[0m")
+                console.print("\n[bold blue]*****NEW TASKS CREATED*****[/bold blue]")
 
             for task in new_tasks:
-                print(task["task_name"])  # Print the task name directly
+                console.print(f"[bold]{task['task_id']}. {task['task_name']}[/bold]")
                 # Set the ID of each new task to the next available integer value
-                task["task_id"] = str(max([int(t["task_id"]) for t in task_list if t["task_id"].isdigit()]) + 1) if task_list else "1"
+                task["task_id"] = str(max([int(t["task_id"]) for t in task_list]) + 1) if task_list else "1"
                 add_task(task)
-                
+
             with Loader("Prioritizing tasks..."):
                 prioritization_agent(this_task_id=current_task["task_id"])
             # Sleep before checking the task list again

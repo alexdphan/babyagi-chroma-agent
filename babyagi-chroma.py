@@ -34,6 +34,14 @@ YOUR_TABLE_NAME = os.getenv("TABLE_NAME", "")
 assert YOUR_TABLE_NAME, "TABLE_NAME environment variable is missing from .env"
 table_name = YOUR_TABLE_NAME
 
+# Objective configuration
+OBJECTIVE = os.getenv("OBJECTIVE", "Write a weather report for SF today")
+assert OBJECTIVE, "OBJECTIVE environment variable is missing from .env"
+
+# Initial task configuration
+INITIAL_TASK = os.getenv("INITIAL_TASK", os.getenv("FIRST_TASK", "Develop a task list"))
+assert INITIAL_TASK, "INITIAL_TASK environment variable is missing from .env"
+
 # Define your embedding model
 embeddings_model = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
 
@@ -293,7 +301,8 @@ class BabyAGI(Chain, BaseModel):
         """Run the agent."""
         objective = inputs["objective"]
 
-        first_task = inputs.get("first_task", "Make a todo list")
+        # first_task = inputs.get("first_task", "Make a todo list")
+        first_task = inputs.get("first_task", INITIAL_TASK)
         self.add_task({"task_id": 1, "task_name": first_task})
         num_iters = 0
         while True:
@@ -370,9 +379,6 @@ class BabyAGI(Chain, BaseModel):
             vectorstore=vectorstore,
             **kwargs,
         )
-
-# Run the BabyAGI #
-OBJECTIVE = "Write a weather report for SF today"
 
 llm = OpenAI(temperature=0)
 # Logging of LLMChains

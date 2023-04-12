@@ -39,7 +39,8 @@ OBJECTIVE = os.getenv("OBJECTIVE", "Write a weather report for SF today")
 assert OBJECTIVE, "OBJECTIVE environment variable is missing from .env"
 
 # Initial task configuration
-INITIAL_TASK = os.getenv("INITIAL_TASK", os.getenv("FIRST_TASK", "Develop a task list"))
+INITIAL_TASK = os.getenv("INITIAL_TASK", os.getenv(
+    "FIRST_TASK", "Develop a task list"))
 assert INITIAL_TASK, "INITIAL_TASK environment variable is missing from .env"
 
 # Define your embedding model
@@ -51,13 +52,15 @@ persist_directory = "chromadb"
 
 # Connect to the Vector Store #
 # setting vectorstore to Chroma, initializing with table_name, embeddings_model, and persist_directory
-vectorstore = Chroma(table_name, embeddings_model, persist_directory=persist_directory)
+vectorstore = Chroma(table_name, embeddings_model,
+                     persist_directory=persist_directory)
 
 # Ensuring the vectorstore is persisting to the chromadb
 vectorstore.persist()
 
-
 # Define the Chains #
+
+
 class TaskCreationChain(LLMChain):
     """Chain to generates tasks."""
 
@@ -193,30 +196,33 @@ def prioritize_tasks(
         if len(task_parts) == 2:
             task_id = task_parts[0].strip()
             task_name = task_parts[1].strip()
-            prioritized_task_list.append({"task_id": task_id, "task_name": task_name})
+            prioritized_task_list.append(
+                {"task_id": task_id, "task_name": task_name})
     # return the list of dictionaries
     return prioritized_task_list
 
 
 def _get_top_tasks(vectorstore: Chroma, query: str, k: int) -> List[str]:
     """Get the top k tasks based on the query."""
+    try:
+        results = vectorstore.similarity_search_with_score(query=query, k=k)
+    except chromadb_errors.NoIndexException:
+        return []
+
     # results is a list of tuples, each tuple has a vectorstore item and a score
-    results = vectorstore.similarity_search_with_score(query, k=k)
-    # if results is empty, return an empty list
     if not results:
         return []
-    # sorted_results is a list of vectorstore items, sorted by score
+
+    # The rest of the function remains the same
     sorted_results, _ = zip(*sorted(results, key=lambda x: x[1], reverse=True))
-    # tasks is a list of strings, each string is a task, for items in sorted_results
+
     tasks = []
     for item in sorted_results:
-        # If the metadata of the item has a task key, then add the task to the list
         try:
             tasks.append(str(item.metadata["task"]))
-        # If the metadata of the item does not have a task key, then print a warning
         except KeyError:
-            # print(f"Warning: 'task' key not found in metadata of item")
             print(f"")
+
     return tasks
 
 
@@ -228,11 +234,11 @@ def execute_task(
     k: int = 5,
 ) -> str:
     """Execute a task."""
-    k = 5
-    # while true, get top k tasks, if not enough, reduce k by 1, if k == 0, break
+    # while true, get top k tasks, if not enough, reduce k by 1, if k == 0, break. break doesn't give a value, so context is an empty list
     while True:
         try:
-            context = _get_top_tasks(vectorstore, query=objective, k=k)
+            context = _get_top_tasks(
+                vectorstore=vectorstore, query=objective, k=k)
             break
         except chromadb_errors.NotEnoughElementsException:
             k -= 1
@@ -259,13 +265,15 @@ class BabyAGI(Chain, BaseModel):
     """Controller model for the BabyAGI agent."""
 
     task_list: deque = Field(default_factory=deque)  # list of tasks
-    task_creation_chain: TaskCreationChain = Field(...)  # chain generating new tasks
+    # chain generating new tasks
+    task_creation_chain: TaskCreationChain = Field(...)
     task_prioritization_chain: TaskPrioritizationChain = Field(
         ...
     )  # chain prioritizing tasks
     execution_chain: AgentExecutor = Field(...)  # chain executing tasks
     task_id_counter: int = Field(1)  # counter for task ids
-    vectorstore: VectorStore = Field(init=False)  # vectorstore for storing results
+    # vectorstore for storing results
+    vectorstore: VectorStore = Field(init=False)
     max_iterations: Optional[int] = None  # maximum number of iterations
 
     class Config:
@@ -286,7 +294,8 @@ class BabyAGI(Chain, BaseModel):
         print(str(task["task_id"]) + ": " + task["task_name"])
 
     def print_task_result(self, result: str):
-        print("\033[93m\033[1m" + "\n*****TASK RESULT*****\n" + "\033[0m\033[0m")
+        print("\033[93m\033[1m" +
+              "\n*****TASK RESULT*****\n" + "\033[0m\033[0m")
         print(result)
 
     @property
@@ -317,6 +326,7 @@ class BabyAGI(Chain, BaseModel):
                 result = execute_task(
                     self.vectorstore, self.execution_chain, objective, task
                 )
+                # this is the index of the task in the task list, if it exists
                 this_task_id = int(task["task_id"])
                 self.print_task_result(result)
 
@@ -352,7 +362,8 @@ class BabyAGI(Chain, BaseModel):
             num_iters += 1
             if self.max_iterations is not None and num_iters == self.max_iterations:
                 print(
-                    "\033[91m\033[1m" + "\n*****TASK ENDING*****\n" + "\033[0m\033[0m"
+                    "\033[91m\033[1m" +
+                    "\n*****TASK ENDING*****\n" + "\033[0m\033[0m"
                 )
                 break
         return {}
@@ -380,7 +391,9 @@ class BabyAGI(Chain, BaseModel):
             **kwargs,
         )
 
+
 llm = OpenAI(temperature=0)
+
 # Logging of LLMChains
 verbose = False
 # If None, will keep on going forever

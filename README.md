@@ -75,7 +75,7 @@ This script works with all OpenAI models. The default model is **gpt-3.5 (text-d
 
 # ⚠️ Warning<a name="continous-script-warning"></a>
 
-This script is designed to be run continuously as part of a task management system. Running the script continuously can result in high API usage, so please use it responsibly. Additionally, the script requires that the OpenAI API be set up correctly, so ensure that the APIs are configured before running the script.
+This script is designed to be run continuously as part of a task management system. Running the script continuously can result in high API usage, so please use it responsibly. Additionally, the script requires that the OpenAI API and Serp be set up correctly, so ensure that the APIs are configured before running the script.
 
 # 🤝 Contribution
 

@@ -71,7 +71,7 @@ All optional values above can also be specified on the command line.
 
 # 🧪 Supported Models<a name="supported-models"></a>
 
-This script works with all OpenAI models. The default model is **gpt-4**. If a timeout request occurs (after two attempts), the model will switch to **gpt-3.5-turbo**. To use a different model, feel free to modify the code accordingly.
+This script works with all OpenAI models. The default model is **gpt-3.5 (text-davinci-003)**. To use a different model, feel free to modify the code accordingly.
 
 # ⚠️ Warning<a name="continous-script-warning"></a>
 

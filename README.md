@@ -38,7 +38,7 @@ The script carries out the following steps in an infinite loop:
 
 ## 🔗 Execution Chain
 
-The Execution Chain processes a given task by considering the objective and context. It utilizes Langchain's LLMChain to execute the task. The `execute_task` function takes a Chroma VectorStore, an execution chain, an objective, and task information as input. It retrieves a list of top *k* tasks from the VectorStore based on the objective, and then executes the task using the execution chain, storing the result in the VectorStore. The function returns the result.
+The Execution Chain processes a given task by considering the objective and context. It utilizes Langchain's LLMChain to execute the task. The `execute_task` function takes a Chroma VectorStore, an execution chain, an objective, and task information as input. It retrieves a list of top _k_ tasks from the VectorStore based on the objective, and then executes the task using the execution chain, storing the result in the VectorStore. The function returns the result.
 
 The execution chain is not explicitly defined in this code block. However, it is passed as a parameter to `execute_task` and can be defined separately in the code. It is an instance of the LLMChain class from Langchain, which accepts a prompt and generates a response based on provided input variables.
 
@@ -61,7 +61,7 @@ To utilize the script, perform the following steps:
 1. Clone the repository: `git clone https://github.com/alexdphan/babyagi-chroma.git` and `cd` into the cloned directory.
 2. Install the required packages: `pip install -r requirements.txt`
 3. Copy the `.env.example` file to `.env`: `cp .env.example .env`. Set the following variables in this file.
-4. Provide your OpenAI keys in the `OPENAI_API_KEY`.
+4. Provide your api keys in the `OPENAI_API_KEY` and `SERPAPI_API_KEY`.
 5. Set the name of the table where task results will be stored in the `TABLE_NAME` variable.
 6. (Optional) Set the objective of the task management system in the `OBJECTIVE` variable.
 7. (Optional) Set the first task of the system in the `INITIAL_TASK` variable.

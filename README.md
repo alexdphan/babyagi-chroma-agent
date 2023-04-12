@@ -1,5 +1,9 @@
 # 🤖 Baby AGI template with Langchain Tools and Chroma 🟡 ⛓️
 
+https://user-images.githubusercontent.com/75151616/231332845-cc14899c-6ccf-49df-8223-6ad5e77b72d7.mp4
+
+---
+
 Inspired by [Yoheina Kajima's BabyAGI](https://github.com/yoheinakajima/babyagi)
 
 The [babyagi-chroma](https://github.com/alexdphan/babyagi-chroma) repository offers a free vector storage solution, Chroma, which is run locally. This is particularly advantageous for users who want to avoid potential costs associated with other vector storage options such as Pinecone.

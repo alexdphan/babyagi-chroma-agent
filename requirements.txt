@@ -2,3 +2,4 @@ langchain==0.0.136
 openai==0.27.0
 python-dotenv==1.0.0
 rich==13.3.3
+chromadb==0.3.21
